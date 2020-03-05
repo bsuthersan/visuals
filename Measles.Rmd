@@ -1,0 +1,108 @@
+---
+title: "Measles"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+#Read in the data
+library(tidyverse)
+measles <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-02-25/measles.csv')
+
+```
+
+Alright, start by looking at the vaccination rate.
+
+```{r}
+measles %>%
+  ggplot(aes(overall)) +
+  geom_histogram()
+```
+
+There is a bunch of them with a 0 vaccination rate. What is with that?
+
+
+```{r}
+ measles %>%
+  count(overall, sort=T)
+```
+
+Okay, they are minus 1s. What does that mean? Looks like data error.
+
+Also, `District` is empty.
+
+I'm going to filter out all the minus -1.s and run the histogram again.
+
+```{r}
+measles <- measles %>%
+  filter(overall>=0)
+
+measles %>%
+  ggplot(aes(overall)) +
+  geom_histogram()
+```
+
+Okay, that's looking a lot better. Now, I'm going to plot the schools to see if there are any key trends we can observe.
+
+```{r}
+measles %>%
+  ggplot(aes(lng, lat)) +
+  geom_point(alpha=0.1)
+```
+
+Sigh, some of these long and lats are wrong. Filter out any of the above 0s.
+
+```{r}
+measles %>%
+  filter(lng<=0) %>%
+  ggplot(aes(lng, lat)) +
+  geom_point(alpha=0.01)
+```
+
+Okay, much better. I'm going to facet by state and see if I can find any key trends. But still too much data. What I'm going to do is to split the data into quintiles by overall vaccination rates, and see what we get.
+
+```{r}
+measles %>% 
+  filter(lng<=0) %>%
+  mutate(overall_quintiles = ntile(overall, 5)) %>%
+  ggplot(aes(lng, lat)) +
+  geom_point(alpha=0.01) +
+  facet_wrap(~overall_quintiles, scales="free")
+```
+
+Okay, not much going on here - at least, can't see any key trends, really. 
+
+Another way of summarising this data is to create a plot of means with error bars.
+
+```{r}
+library(broom)
+library(purrr)
+measles %>%
+  select(state, overall) %>%
+  group_by(state) %>%
+  do(tidy(t.test(.$overall))) %>%
+  ggplot(aes(estimate, reorder(state, estimate))) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = conf.low,
+                     xmax = conf.high)) +
+  ylab("")  +
+  ggthemes::theme_fivethirtyeight() +
+  ggtitle("Schools' overall vaccination rate (%) by U.S. state")
+```
+
+Alright, let's build a model to predict measles vaccination rates.
+
+```{r}
+#Create the training and test sets
+measles <- measles %>% mutate(ID = row_number())
+train <- sample_frac(measles, 0.7)
+test <- measles %>% filter(!ID %in% train$ID)
+```
+
+```{r}
+model <- lm(data = train, overall ~ type + county)
+summary(model)
+```
+
+
